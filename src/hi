@@ -1,0 +1,25 @@
+for (size_t i = 0; i < observable.size(); ++i) {
+        // <--- FIX START: Calculate Relative coordinates
+        double dx_global = observable[i].x - robot_x_;
+        double dy_global = observable[i].y - robot_y_;
+        
+        // Rotate to Robot Frame (inverse of robot rotation)
+        double cos_th = std::cos(robot_theta_gt_);
+        double sin_th = std::sin(robot_theta_gt_);
+        
+        double x_local = cos_th * dx_global + sin_th * dy_global;
+        double y_local = -sin_th * dx_global + cos_th * dy_global;
+        // <--- FIX END
+
+        double noise_x = noise_dist_(rng_) * std_dev;
+        double noise_y = noise_dist_(rng_) * std_dev;
+
+        float* ptr = (float*)&pc->data[i * pc->point_step];
+        ptr[0] = x_local + noise_x; // <--- FIX: Using local coordinates
+        ptr[1] = y_local + noise_y; // <--- FIX: Using local coordinates
+        ptr[2] = 0.0;
+        int32_t* id_ptr = (int32_t*)&pc->data[i * pc->point_step + 12];
+        *id_ptr = observable[i].id;
+    }
+    observed_landmarks_publisher_->publish(std::move(pc));
+  }
