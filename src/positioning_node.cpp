@@ -82,6 +82,8 @@ private:
     // UKF FILTER
     // ==========================
 
+    LandmarkManager landmark_manager_;
+
     UKF ukf_{0.01, 0.01, 0.01, 10};// process_noise_xy, process_noise_theta, measurement_noise_xy, num_landmarks
     rclcpp::Time last_odom_time_;   // für dt Berechnung
     double last_theta_;             // für dtheta Berechnung
