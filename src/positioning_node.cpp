@@ -15,7 +15,7 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 #include "kalman_positioning/ukf.hpp"
-
+#include "kalman_positioning/landmark_manager.hpp"
 
 
 
