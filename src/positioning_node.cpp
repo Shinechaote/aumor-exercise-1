@@ -60,6 +60,17 @@ public:
         RCLCPP_INFO(this->get_logger(), "Publishing to /robot_estimated_odometry");
         
         RCLCPP_INFO(this->get_logger(), "Kalman Positioning Node initialized successfully");
+
+        std::string csv_path = this->get_parameter("landmarks_csv_path").as_string();
+
+        // 2. Load Landmarks
+        if (landmark_manager_.loadFromCSV(csv_path)) {
+            // 3. Pass to UKF
+            ukf_.setLandmarks(landmark_manager_.getLandmarks());
+            RCLCPP_INFO(this->get_logger(), "Landmarks loaded into UKF successfully.");
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to load landmarks into UKF!");
+        }
     }
 
 private:

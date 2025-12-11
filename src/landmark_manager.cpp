@@ -40,33 +40,37 @@ bool LandmarkManager::loadFromCSV(const std::string& csv_path) {
     std::string line;
     int line_num = 0;
     
-    while (std::getline(file, line)) {
-      // Parse CSV format: id,x,y
-      std::string id_str, x_str, y_str;
-      size_t pos1 = line.find(',');
-      size_t pos2 = line.find(',', pos1 + 1);
-      
-      if (pos1 == std::string::npos || pos2 == std::string::npos) {
-        continue;
-      }
-      
-      try {
-        id_str = line.substr(0, pos1);
-        x_str = line.substr(pos1 + 1, pos2 - pos1 - 1);
-        y_str = line.substr(pos2 + 1);
+   while (std::getline(file, line)) {
+        // 1. Handle comments and empty lines
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        // 2. Parse line: id,x,y
+        std::stringstream ss(line);
+        std::string segment;
+        std::vector<std::string> parts;
         
-        int id = std::stoi(id_str);
-        double x = std::stod(x_str);
-        double y = std::stod(y_str);
-        
-        landmarks_.push_back({id, x, y});
-      } catch (const std::exception& e) {
-        continue;
-      }
-    }
-    
-    file.close();
-    
+        while(std::getline(ss, segment, ',')) {
+            parts.push_back(segment);
+        }
+
+        if (parts.size() < 3) continue;
+
+        try {
+            int id = std::stoi(parts[0]);
+            double x = std::stod(parts[1]);
+            double y = std::stod(parts[2]);
+            
+            // FIX: Use map insertion instead of push_back
+            landmarks_[id] = {x, y};
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error parsing line: " << line << " (" << e.what() << ")" << std::endl;
+            continue;
+        }
+    } 
+
     if (landmarks_.empty()) {
         std::cerr << "Warning: No landmarks loaded from " << csv_path << std::endl;
         return false;
