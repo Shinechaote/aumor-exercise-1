@@ -41,11 +41,28 @@ bool LandmarkManager::loadFromCSV(const std::string& csv_path) {
     int line_num = 0;
     
     while (std::getline(file, line)) {
-        ++line_num;
+      // Parse CSV format: id,x,y
+      std::string id_str, x_str, y_str;
+      size_t pos1 = line.find(',');
+      size_t pos2 = line.find(',', pos1 + 1);
+      
+      if (pos1 == std::string::npos || pos2 == std::string::npos) {
+        continue;
+      }
+      
+      try {
+        id_str = line.substr(0, pos1);
+        x_str = line.substr(pos1 + 1, pos2 - pos1 - 1);
+        y_str = line.substr(pos2 + 1);
         
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
+        int id = std::stoi(id_str);
+        double x = std::stod(x_str);
+        double y = std::stod(y_str);
+        
+        landmarks_.push_back({id, x, y});
+      } catch (const std::exception& e) {
+        continue;
+      }
     }
     
     file.close();
