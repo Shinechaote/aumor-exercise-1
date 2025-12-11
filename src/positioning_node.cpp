@@ -61,6 +61,7 @@ public:
         
         RCLCPP_INFO(this->get_logger(), "Kalman Positioning Node initialized successfully");
 
+        this->declare_parameter("landmarks_csv_path", "/home/studamr/workspace/src/kalman_positioning/landmarks.csv");
         std::string csv_path = this->get_parameter("landmarks_csv_path").as_string();
 
         // 2. Load Landmarks
