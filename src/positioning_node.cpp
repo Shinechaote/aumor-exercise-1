@@ -9,6 +9,16 @@
 #include <memory>
 #include <cmath>
 
+#include "tf2_ros/transform_broadcaster.h"
+#include "geometry_msgs/msg/transform_stamped.hpp"
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+
+#include "kalman_positioning/ukf.hpp"
+
+
+
+
 /**
  * @brief Positioning node for UKF-based robot localization (Student Assignment)
  * 
@@ -57,6 +67,15 @@ private:
     // SUBSCRIBERS AND PUBLISHERS
     // ============================================================================
     
+    // ==========================
+    // UKF FILTER
+    // ==========================
+
+    UKF ukf_{0.01, 0.01, 0.01, 10};// process_noise_xy, process_noise_theta, measurement_noise_xy, num_landmarks
+    rclcpp::Time last_odom_time_;   // für dt Berechnung
+    double last_theta_;             // für dtheta Berechnung
+
+
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr landmarks_obs_sub_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr estimated_odom_pub_;
@@ -101,13 +120,56 @@ private:
         double vx = msg->twist.twist.linear.x;
         double vy = msg->twist.twist.linear.y;
         
+        //first callback
+        if (last_odom_time_.nanoseconds() == 0){
+            last_odom_time_ = msg->header.stamp;
+            last_theta_ = theta;
+            publishEstimatedOdometry(msg->header.stamp, *msg);
+            return;
+        }
+
+
+        double dt = (rclcpp::Time(msg->header.stamp)- last_odom_time_).seconds();
+        //double dt = (msg->header.stamp - last_odom_time_).seconds();
+
+        // Verschiebung berechnen
+        double dx = vx * dt;
+        double dy = vy * dt;
+        double dtheta = normalizeAngle(theta - last_theta_);
+
+        // UKF Prediction
+        ukf_.predict(dt, dx, dy, dtheta);
+
+        // Update letzte Messwerte
+        last_odom_time_ = msg->header.stamp;
+        last_theta_ = theta;
+
+        // Publiziere geschätzte Odometry
+        nav_msgs::msg::Odometry est_msg;
+        est_msg.header.stamp = msg->header.stamp;
+        est_msg.header.frame_id = "map";
+        est_msg.child_frame_id = "robot_estimated";
+
+        est_msg.pose.pose.position.x = ukf_.getState()(0);
+        est_msg.pose.pose.position.y = ukf_.getState()(1);
+        tf2::Quaternion q;
+        q.setRPY(0.0, 0.0, ukf_.getState()(2));
+        est_msg.pose.pose.orientation = tf2::toMsg(q);
+
+        est_msg.twist.twist.linear.x = ukf_.getState()(3);
+        est_msg.twist.twist.linear.y = ukf_.getState()(4);
+            
+    
+        /** 
         RCLCPP_DEBUG(this->get_logger(), 
             "Parsed: x=%.3f, y=%.3f, theta=%.3f, vx=%.3f, vy=%.3f",
             x, y, theta, vx, vy);
-        
+        */
         // For now, publish the noisy odometry as estimated
         // Students should replace this with actual filter output
-        publishEstimatedOdometry(msg->header.stamp, *msg);
+
+
+        publishEstimatedOdometry(msg->header.stamp, est_msg);
     }
     
     /**
@@ -122,8 +184,14 @@ private:
         // STUDENT ASSIGNMENT STARTS HERE
         // ========================================================================
         
-        RCLCPP_DEBUG(this->get_logger(), 
-            "Landmark observation received with %lu points", msg->width);
+
+        /**RCLCPP_DEBUG(this->get_logger(), 
+           Landmark observation received with %lu points", msg->width);
+        */
+
+        //Define observation
+        std::vector<std::tuple<int, double, double, double>> observations;
+
         
         // Placeholder: Parse and log the observations
         try {
@@ -131,21 +199,39 @@ private:
             sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
             sensor_msgs::PointCloud2ConstIterator<uint32_t> iter_id(*msg, "id");
             
-            int count = 0;
             for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_id) {
                 int landmark_id = static_cast<int>(*iter_id);
-                float obs_x = static_cast<float>(*iter_x);
-                float obs_y = static_cast<float>(*iter_y);
+                float obs_x = *iter_x;
+                float obs_y = *iter_y;
+                double noise_cov = 0.01; // Beispiel: Messrauschen, kann angepasst werden
+
+                observations.push_back(std::make_tuple(landmark_id, obs_x, obs_y, noise_cov));
                 
-                RCLCPP_DEBUG(this->get_logger(),
-                    "Landmark %d observed at (%.3f, %.3f)",
-                    landmark_id, obs_x, obs_y);
-                
-                count++;
             }
-            
+            // UKF Measurement Update
+            ukf_.update(observations);
+
+            //Publiziere aktualisierte geschätzte Odometry
+            nav_msgs::msg::Odometry est_msg;
+            est_msg.header.stamp = msg->header.stamp;
+            est_msg.header.frame_id = "map";
+            est_msg.child_frame_id = "robot_estimated";
+
+            est_msg.pose.pose.position.x = ukf_.getState()(0);
+            est_msg.pose.pose.position.y = ukf_.getState()(1);
+            tf2::Quaternion q;
+            q.setRPY(0.0, 0.0, ukf_.getState()(2));
+            est_msg.pose.pose.orientation = tf2::toMsg(q);
+
+            est_msg.twist.twist.linear.x = ukf_.getState()(3);
+            est_msg.twist.twist.linear.y = ukf_.getState()(4);
+
+            publishEstimatedOdometry(msg->header.stamp, est_msg);
+
+            /** 
             RCLCPP_DEBUG(this->get_logger(), 
                 "Processed %d landmark observations", count);
+            */
         } catch (const std::exception& e) {
             RCLCPP_WARN(this->get_logger(), 
                 "Failed to parse landmark observations: %s", e.what());
@@ -186,16 +272,27 @@ private:
      */
     void publishEstimatedOdometry(const rclcpp::Time& timestamp, 
                                   const nav_msgs::msg::Odometry& odom_msg) {
-        nav_msgs::msg::Odometry estimated_odom = odom_msg;
-        estimated_odom.header.stamp = timestamp;
-        estimated_odom.header.frame_id = "map";
-        estimated_odom.child_frame_id = "robot_estimated";
-        
+
+        nav_msgs::msg::Odometry est_msg;
+        est_msg.header.stamp = timestamp;
+        est_msg.header.frame_id = "map";
+        est_msg.child_frame_id = "robot_estimated";
+
+        est_msg.pose.pose.position.x = ukf_.getState()(0);
+        est_msg.pose.pose.position.y = ukf_.getState()(1);
+        tf2::Quaternion q;
+        q.setRPY(0.0, 0.0, ukf_.getState()(2));
+        est_msg.pose.pose.orientation = tf2::toMsg(q);
+
+        est_msg.twist.twist.linear.x = ukf_.getState()(3);
+        est_msg.twist.twist.linear.y = ukf_.getState()(4);
+
+        estimated_odom_pub_->publish(est_msg);
         // STUDENT TODO: Replace this with actual filter output
         // Set position, orientation, velocity, and covariance from your Kalman filter
         // Currently using placeholder values (noisy odometry)
         
-        estimated_odom_pub_->publish(estimated_odom);
+        
     }
 };
 

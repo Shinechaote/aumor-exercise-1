@@ -31,16 +31,11 @@ UKF::UKF(double process_noise_xy, double process_noise_theta,
          double measurement_noise_xy, int num_landmarks)
     : nx_(5), nz_(2) {
     
-    // 1. Initialize filter parameters (alpha, beta, kappa, lambda)
-    alpha_ = 0.001; 
-    beta_  = 2.0;   
-    kappa_ = 0.0;   
-
-    lambda_ = alpha_ * alpha_ * (nx_ + kappa_) - nx_;
+    lambda_ = ALPHA * ALPHA * (nx_ + KAPPA) - nx_;
       
     // 2. Initialize state vector x_ with zeros 
     x_ = Eigen::VectorXd::Zero(nx_);
-
+kappa_
     // 3. Initialize state covariance matrix P_ 
     P_ = Eigen::MatrixXd::Identity(nx_, nx_);
 
@@ -58,17 +53,17 @@ UKF::UKF(double process_noise_xy, double process_noise_theta,
     R_(1, 1) = measurement_noise_xy;
 
     // 6. Calculate sigma point weights for mean and covariance
-    weights_m_ = Eigen::VectorXd(2 * nx_ + 1);
-    weights_c_ = Eigen::VectorXd(2 * nx_ + 1);
+    Wm_ = Eigen::VectorXd(2 * nx_ + 1);
+    Wc_ = Eigen::VectorXd(2 * nx_ + 1);
 
-    weights_m_(0) = lambda_ / (nx_ + lambda_);
+    Wm_(0) = lambda_ / (nx_ + lambda_);
     
-    weights_c_(0) = weights_m_(0) + (1 - alpha_ * alpha_ + beta_);
+    Wc_(0) = Wm_(0) + (1 - ALPHA * ALPHA + BETA);
 
     double weight = 0.5 * lambda_ / (nx_ + lambda_);
     for (int i = 1; i < 2 * nx_ + 1; ++i) {
-        weights_m_(i) = weight;
-        weights_c_(i) = weight;
+        Wm_(i) = weight;
+        Wc_(i) = weight;
     } 
     std::cout << "UKF Constructor: TODO - Implement filter initialization" << std::endl;
 }
@@ -239,7 +234,7 @@ void UKF::predict(double dt, double dx, double dy, double dtheta) {
     Eigen::VectorXd x_pred = Eigen::VectorXd::Zero(nx_);
     
     for (int i = 0; i < 2 * nx_ + 1; ++i) {
-        x_pred += weights_m_(i) * sigma_points_pred[i];
+        x_pred += Wm_(i) * sigma_points_pred[i];
     }
 
     Eigen::MatrixXd P_pred = Eigen::MatrixXd::Zero(nx_, nx_);
@@ -250,7 +245,7 @@ void UKF::predict(double dt, double dx, double dy, double dtheta) {
 
         x_diff(2) = normalizeAngle(x_diff(2));
 
-        P_pred += weights_c_(i) * x_diff * x_diff.transpose();
+        P_pred += Wc_(i) * x_diff * x_diff.transpose();
     }
 
     // 4. Add process noise covariance Q
@@ -282,7 +277,7 @@ void UKF::predict(double dt, double dx, double dy, double dtheta) {
 void UKF::update(const std::vector<std::tuple<int, double, double, double>>& landmark_observations) {
     if (landmark_observations.empty()) {
         return;
-    }
+    
     
     // STUDENT IMPLEMENTATION STARTS HERE
     // ========================================================================
@@ -312,7 +307,7 @@ void UKF::update(const std::vector<std::tuple<int, double, double, double>>& lan
         // 3. Calculate predicted measurement mean
         Eigen::VectorXd z_pred = Eigen::VectorXd::Zero(nz_);
         for (int i = 0; i < n_sig; ++i) {
-            z_pred += weights_m_(i) * sigma_points_pred[i];
+            z_pred += Wm_(i) * sigma_points_pred[i];
         }
 
         // 4. Calculate measurement covariance (S) and cross-covariance (Tc)
@@ -326,8 +321,8 @@ void UKF::update(const std::vector<std::tuple<int, double, double, double>>& lan
 
             x_diff(2) = normalizeAngle(x_diff(2));
             
-            S += weights_c_(i) * z_diff * z_diff.transpose();
-            Tc += weights_c_(i) * x_diff * z_diff.transpose();
+            S += Wc_(i) * z_diff * z_diff.transpose();
+            Tc += Wc_(i) * x_diff * z_diff.transpose();
         }
 
         S += R_;
